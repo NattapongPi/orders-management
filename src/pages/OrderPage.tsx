@@ -1,9 +1,10 @@
-import OrdersTable from "../components/OrdersTable";
+import OrdersTable2 from "../components/OrdersTable";
 import Button from "@mui/material/Button";
 function OrderPage() {
   return (
     <>
-      <OrdersTable />
+      <div className="text-4xl font-bold pb-6">Order Management</div>
+      <OrdersTable2 />
       <div className="flex justify-end">
         <Button variant="contained">confirm</Button>
       </div>
