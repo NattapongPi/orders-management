@@ -33,7 +33,9 @@ npm install
 npm run dev
 ```
 
-7. เปิดโปรแกรมจาก localhost
+7. หลังจาก run เสร็จสิ้น ให้เปิดโปรแกรมได้ผ่าน [localhost](http://localhost:5173/)
+
+8. หรือถ้าหากต้องการทดสอบ สามารถเข้าเยี่ยมชมได้ผ่าน Link : [orders-management](http://orders-management-five.vercel.app/)
 
 ## วิธีการใช้งานโปรแกรม
 
