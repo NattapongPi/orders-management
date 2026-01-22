@@ -10,6 +10,8 @@ import {
   TableHead,
   TableRow,
   Paper,
+  Tooltip,
+  Chip,
 } from "@mui/material";
 
 import { sortOrder } from "../mock/orders";
@@ -18,26 +20,25 @@ import { mockCustomers } from "../mock/customerInfo";
 import { orderTier } from "../mock/priceTier";
 import { mockInventory } from "../mock/warehouseInventory";
 
-import type { ProductInfoType } from "../mock/productInfo";
 import type { OrderType } from "../mock/orders";
-import type { Customer } from "../mock/customerInfo";
 import type { InventoryItem } from "../mock/warehouseInventory";
+
+import { calculateAutoAssign, bankersRound } from "../utils/calculate";
 
 // ต้อง sort ก่อน
 const orders = sortOrder();
 
-export default function OrdersTable() {
+export default function OrdersTable2() {
   const [page, setPage] = useState(0);
   const [rowsPerPage, setRowsPerPage] = useState(10);
   const [tableData, setTableData] = useState<OrderType[]>([]);
   const [inventory, setInventory] = useState<InventoryItem[]>([]);
-  const [customers, setCustomers] = useState<Customer[]>([]);
-  const [customerTotalPrice, setCustomerTotalPrice] = useState(
+  const [customerTotalSpend, setCustomerTotalSpend] = useState(
     new Map<string, number>(),
   );
   const hasRun = useRef(false);
 
-  const handleChangePage = (event: unknown, newPage: number) => {
+  const handleChangePage = (_event: unknown, newPage: number) => {
     setPage(newPage);
   };
 
@@ -46,270 +47,67 @@ export default function OrdersTable() {
     setPage(0);
   };
 
-  function findPriceBySupAndItem(
-    supItemObj: ProductInfoType[],
-    order: OrderType,
-  ): number {
-    const multiplier = orderTier[order.type.toLowerCase()];
-    const find = supItemObj?.find(
-      (s) => s.supplierId === order.supplierId && s.itemId === order.itemId,
-    );
-    if (find) return find.price * multiplier;
-    return 0; // what
-  }
+  async function refreshOrderData(baseOrders: OrderType[]) {
+    const initialInventory = structuredClone(mockInventory);
+    const tempTotalSpendMap = new Map<string, number>();
 
-  function findCustomerCredit(tempCustomer: Customer[], item: OrderType) {
-    const findCustomer = tempCustomer.find(
-      (cus) => cus.customerId === item.customerId,
-    );
-    if (findCustomer) {
-      return findCustomer.credit;
-    }
-    return 0;
-  }
+    const finalOrders = baseOrders.map((order) => {
+      const initialCredit =
+        mockCustomers.find((c) => c.customerId === order.customerId)?.credit ||
+        0;
 
-  function calculateTotalPrice(price: number, order: OrderType) {
-    return price * order.request;
-  }
+      const spentSoFar = tempTotalSpendMap.get(order.customerId) || 0;
+      const remainingCredit = initialCredit - spentSoFar;
 
-  function calAssignedLogic(
-    tempInventory: InventoryItem[],
-    order: OrderType,
-    totalPrice: number,
-    customerCreditBefore: number,
-    price: number,
-  ) {
-    const invIndex = tempInventory.findIndex(
-      (item) =>
-        item.warehouseId === order.warehouseId &&
-        item.supplierId === order.supplierId &&
-        item.itemId === order.itemId,
-    );
-    const inventoryAmount = tempInventory[invIndex]?.amount ?? 0;
-    // case 1 มีเงินพอ ของพอ
-    // total price <= customer credit && inv enough >>> full amount
-    if (
-      customerCreditBefore >= totalPrice &&
-      inventoryAmount >= order.request
-    ) {
-      return {
-        isBuySuccess: true,
-        totalPrice: totalPrice,
-        isPartialBuy: false,
-        inventoryAmount: inventoryAmount,
-        buyableAtLeastOne: false,
-      };
-    }
-
-    // case 2 มีเงินพอ ของไม่พอ
-    // total price <= customer credit && inv less than needed >>> partial amount max of inv
-    else if (
-      customerCreditBefore >= totalPrice &&
-      inventoryAmount < order.request &&
-      inventoryAmount > 0
-    ) {
-      return {
-        isBuySuccess: true,
-        totalPrice: totalPrice,
-        isPartialBuy: true,
-        inventoryAmount: inventoryAmount,
-        buyableAtLeastOne: false,
-      };
-    }
-
-    // case 3 มีเงินไม่พอ แต่ซื้อได้อย่างน้อย 1 อัน ของพอ
-    // total price > customer credit  >>> partial amount
-    else if (
-      customerCreditBefore < totalPrice &&
-      customerCreditBefore > price &&
-      inventoryAmount > 0
-    ) {
-      return {
-        isBuySuccess: true,
-        totalPrice: totalPrice,
-        isPartialBuy: true,
-        inventoryAmount: inventoryAmount,
-        buyableAtLeastOne: true,
-      };
-    }
-  }
-
-  async function calculateOrderLogic(
-    currentOrder: OrderType,
-    inventory: InventoryItem[],
-    customers: Customer[],
-  ) {
-    const price = await findPriceBySupAndItem(mockSupplierItems, currentOrder);
-    const totalPrice = await calculateTotalPrice(price, currentOrder);
-    const customerCreditBefore = await findCustomerCredit(
-      customers,
-      currentOrder,
-    );
-    const result = await calAssignedLogic(
-      inventory,
-      currentOrder,
-      totalPrice,
-      customerCreditBefore,
-      price,
-    );
-
-    const updatedOrder = {
-      ...currentOrder,
-      price,
-      customerCreditBefore,
-    };
-
-    let assignedAmount = 0;
-
-    if (result?.isBuySuccess && !result.isPartialBuy) {
-      assignedAmount = currentOrder.request;
-    } else if (
-      result?.isBuySuccess &&
-      result.isPartialBuy &&
-      !result.buyableAtLeastOne
-    ) {
-      assignedAmount = result.inventoryAmount;
-    } else if (result?.buyableAtLeastOne) {
-      assignedAmount = Math.floor(customerCreditBefore / price);
-    }
-
-    const finalTotalPrice = assignedAmount * price;
-    updatedOrder.assigned = assignedAmount;
-    updatedOrder.totalPrice = finalTotalPrice;
-    updatedOrder.customerCreditAfter = customerCreditBefore - finalTotalPrice;
-
-    // คำนวนยอดใหม่
-    if (assignedAmount > 0) {
-      const cIdx = customers.findIndex(
-        (c) => c.customerId === currentOrder.customerId,
-      );
-      if (cIdx !== -1) customers[cIdx].credit -= finalTotalPrice;
-
-      const iIdx = inventory.findIndex(
+      const invItem = initialInventory.find(
         (v) =>
-          v.warehouseId === currentOrder.warehouseId &&
-          v.itemId === currentOrder.itemId &&
-          v.supplierId === currentOrder.supplierId,
+          v.itemId === order.itemId &&
+          v.warehouseId === order.warehouseId &&
+          v.supplierId === order.supplierId,
       );
-      if (iIdx !== -1) inventory[iIdx].amount -= assignedAmount;
-    }
+      const currentStock = invItem?.amount || 0;
 
-    return { updatedOrder, inventory, customers };
+      const multiplier = orderTier[order.type.toLowerCase()].multiplier;
+      const supplierItem = mockSupplierItems.find(
+        (s) => s.supplierId === order.supplierId && s.itemId === order.itemId,
+      );
+      if (!supplierItem) return;
+      const calPrice = bankersRound(supplierItem.price * multiplier, 2);
+      const targetAmount =
+        order.assigned !== undefined && order.assigned !== null
+          ? Number(order.assigned)
+          : order.request;
+      const assigned = calculateAutoAssign(
+        targetAmount,
+        calPrice,
+        currentStock,
+        remainingCredit,
+      );
+
+      const rowTotalPrice = bankersRound(assigned * calPrice, 2);
+
+      tempTotalSpendMap.set(order.customerId, spentSoFar + rowTotalPrice);
+      if (invItem) {
+        invItem.amount -= assigned; // หักสต็อกออกจากถังกลาง
+      }
+
+      return {
+        ...order,
+        price: calPrice,
+        initialCredit,
+        assigned,
+        totalPrice: rowTotalPrice,
+      };
+    });
+    setTableData(finalOrders);
+    setInventory(initialInventory); // Admin จะเห็นสต็อกที่เหลือจริงๆ หลังหักทุก Order
+    setCustomerTotalSpend(tempTotalSpendMap); // เอาไว้โชว์ยอดสรุปรายคน
   }
 
   useEffect(() => {
     if (hasRun.current) return;
     hasRun.current = true;
-
-    // const initialCustomers = structuredClone(mockCustomers);
-    // const initialInventory = structuredClone(mockInventory);
-    // const initialOrders = structuredClone(orders)
-
-    // async function mapOrders() {
-    //   const currentOrders = structuredClone(orders);
-    //   for (let i = 0; i < currentOrders.length; i += 1) {
-    //     const price = await findPriceBySupAndItem(
-    //       mockSupplierItems,
-    //       currentOrders[i],
-    //     );
-    //     const totalPrice = await calculateTotalPrice(price, currentOrders[i]);
-    //     const customerCreditBefore = await findCustomerCredit(
-    //       initialCustomers,
-    //       currentOrders[i],
-    //     );
-    //     const result = await calAssignedLogic(
-    //       initialInventory,
-    //       currentOrders[i],
-    //       totalPrice,
-    //       customerCreditBefore,
-    //       price,
-    //     );
-    //     currentOrders[i].customerCreditBefore = customerCreditBefore;
-    //     currentOrders[i].price = price;
-    //     if (result?.isBuySuccess && !result.isPartialBuy) {
-    //       currentOrders[i].totalPrice = totalPrice;
-    //       currentOrders[i].assigned = currentOrders[i].request;
-    //       currentOrders[i].customerCreditAfter =
-    //         customerCreditBefore - result.totalPrice;
-
-    //       const customerIndex = initialCustomers.findIndex(
-    //         (item) => item.customerId === currentOrders[i].customerId,
-    //       );
-    //       if (customerIndex !== -1) {
-    //         initialCustomers[customerIndex].credit -= totalPrice;
-    //       }
-
-    //       const invIndex = initialInventory.findIndex(
-    //         (item) =>
-    //           item.warehouseId === currentOrders[i].warehouseId &&
-    //           item.supplierId === currentOrders[i].supplierId &&
-    //           item.itemId === currentOrders[i].itemId,
-    //       );
-    //       if (invIndex !== -1) {
-    //         initialInventory[invIndex].amount -= currentOrders[i].request;
-    //       }
-    //     } else if (
-    //       result?.isBuySuccess &&
-    //       result.isPartialBuy &&
-    //       !result.buyableAtLeastOne
-    //     ) {
-    //       const newPrice = result.inventoryAmount * price;
-    //       currentOrders[i].assigned = result.inventoryAmount;
-    //       currentOrders[i].totalPrice = newPrice;
-    //       currentOrders[i].customerCreditAfter =
-    //         customerCreditBefore - newPrice;
-    //     } else if (result?.buyableAtLeastOne) {
-    //       const buyableAmount = Math.floor(customerCreditBefore / price);
-    //       currentOrders[i].assigned = buyableAmount;
-    //       const totalPriceBought = price * buyableAmount;
-    //       currentOrders[i].totalPrice = totalPriceBought;
-    //       currentOrders[i].customerCreditAfter =
-    //         customerCreditBefore - totalPriceBought;
-    //     } else {
-    //       currentOrders[i].assigned = 0;
-    //       currentOrders[i].totalPrice = 0;
-    //       currentOrders[i].customerCreditAfter = customerCreditBefore;
-    //     }
-    //   }
-    //   setTableData(currentOrders);
-    //   setCustomers(initialCustomers);
-    //   setInventory(initialInventory);
-    //   // manual case ของต้องพอ ไม่เกินจำนวน request และ credit
-    // }
-    // mapOrders();
-
-    async function initializeData() {
-      let initialCustomers = structuredClone(mockCustomers);
-      let initialInventory = structuredClone(mockInventory);
-      const initialOrders = structuredClone(orders);
-      const finalOrder = [];
-
-      const tempTotalMap = new Map();
-
-      for (let i = 0; i < initialOrders.length; i++) {
-        // เรียกใช้ function กลาง
-        const { updatedOrder, inventory, customers } =
-          await calculateOrderLogic(
-            initialOrders[i],
-            initialInventory,
-            initialCustomers,
-          );
-        finalOrder.push(updatedOrder);
-        initialInventory = inventory; // ส่งค่าที่ถูกตัดยอดแล้วไปใช้ต่อใน Loop หน้า
-        initialCustomers = customers;
-
-        const currentTotal = tempTotalMap.get(updatedOrder.customerId) || 0;
-        tempTotalMap.set(
-          updatedOrder.customerId,
-          currentTotal + updatedOrder.totalPrice,
-        );
-      }
-      setInventory(initialInventory);
-      setCustomers(initialCustomers);
-      setTableData(finalOrder);
-      setCustomerTotalPrice(tempTotalMap);
-    }
-    initializeData();
+    refreshOrderData(orders);
   }, []);
 
   function manualAssignedChange(order: OrderType, newValue: string) {
@@ -328,51 +126,19 @@ export default function OrdersTable() {
       return;
     }
 
-    const currentInvAmount = inventory[invIndex].amount;
-
     const updatedData = tableData.map((t) => {
       if (t.order === order.order && t.subOrder === order.subOrder) {
-        const oldAssigned = Number(t.assigned) || 0;
-        const amountDiff = numNewValue - oldAssigned;
-        // validate
         // ห้ามกรอกเกิน Request
         if (numNewValue > t.request) return t;
-
-        // ห้ามใช้สต็อกเกินจริง
-        if (amountDiff > currentInvAmount) return t;
-
-        // ห้ามใช้ Credit เกิน
-        const newTotalPrice = numNewValue * t.price;
-        const newCreditAfter = t.customerCreditBefore - newTotalPrice;
-        if (newCreditAfter < 0) return t;
-
-        // success case
-        const nextInventory = [...inventory];
-        nextInventory[invIndex] = {
-          ...nextInventory[invIndex],
-          amount: currentInvAmount - amountDiff,
-        };
-        setInventory(nextInventory);
         return {
           ...t,
-          assigned: newValue, // เก็บเป็น string ก่อนเพื่อให้พิมพ์ได้ลื่นไหล
-          totalPrice: newTotalPrice,
-          customerCreditAfter: newCreditAfter,
+          assigned: newValue,
         };
       }
       return t;
     });
 
-    const newTotalMap = new Map();
-    updatedData.forEach((row) => {
-      const current = newTotalMap.get(row.customerId) || 0;
-      newTotalMap.set(
-        row.customerId,
-        current + Number(row.assigned) * row.price,
-      );
-    });
-    setCustomerTotalPrice(newTotalMap);
-    setTableData(updatedData);
+    refreshOrderData(updatedData);
   }
 
   return (
@@ -380,23 +146,82 @@ export default function OrdersTable() {
       <TableContainer component={Paper}>
         <Table sx={{ minWidth: 650 }} size="small" aria-label="a dense table">
           <TableHead>
-            <TableRow>
-              <TableCell>Order</TableCell>
-              <TableCell align="right">Sub Order</TableCell>
-              <TableCell align="right">Item ID</TableCell>
-              <TableCell align="right">Ware ID</TableCell>
-              <TableCell align="right">Sup ID</TableCell>
-              <TableCell align="right">Req amt</TableCell>
-              <TableCell align="right">Type</TableCell>
-              <TableCell align="right">price</TableCell>
-              <TableCell align="right">C Date</TableCell>
-              <TableCell align="right">Cus ID</TableCell>
-              <TableCell align="right">Cus cred bf</TableCell>
-              <TableCell align="right">Assigned</TableCell>
-              <TableCell align="right">t price</TableCell>
-              <TableCell align="right">cred after</TableCell>
-              <TableCell align="right">Remark</TableCell>
-              <TableCell align="right">total</TableCell>
+            <TableRow sx={{ backgroundColor: "#eeeeee" }}>
+              <TableCell>
+                <Tooltip title={"Order"} arrow>
+                  <div>Order</div>
+                </Tooltip>
+              </TableCell>
+              <TableCell align="center">
+                <Tooltip title={"Sub Order"} arrow>
+                  <div>S. Order</div>
+                </Tooltip>
+              </TableCell>
+              <TableCell align="center">
+                <Tooltip title={"Item ID"} arrow>
+                  <div>I. ID</div>
+                </Tooltip>
+              </TableCell>
+              <TableCell align="center">
+                <Tooltip title={"Warehouse ID"} arrow>
+                  <div>W. ID</div>
+                </Tooltip>
+              </TableCell>
+              <TableCell align="center">
+                <Tooltip title={"Supplier ID"} arrow>
+                  <div>S. ID</div>
+                </Tooltip>
+              </TableCell>
+              <TableCell align="center">
+                <Tooltip title={"Request Amount"} arrow>
+                  <div>R. AMT</div>
+                </Tooltip>
+              </TableCell>
+              <TableCell align="center">
+                <Tooltip title={"Type"} arrow>
+                  <div>Type</div>
+                </Tooltip>
+              </TableCell>
+              <TableCell align="center">
+                <Tooltip title={"Price"} arrow>
+                  <div>Price</div>
+                </Tooltip>
+              </TableCell>
+              <TableCell align="center">
+                <Tooltip title={"Date"} arrow>
+                  <div>Date</div>
+                </Tooltip>
+              </TableCell>
+              <TableCell align="center">
+                <Tooltip title={"Customer ID"} arrow>
+                  <div>C. ID</div>
+                </Tooltip>
+              </TableCell>
+              <TableCell align="center">
+                <Tooltip title={"Customer Credit"} arrow>
+                  <div>C. Cred</div>
+                </Tooltip>
+              </TableCell>
+              <TableCell align="center">
+                <Tooltip title={"Assigned"} arrow>
+                  <div>Assigned</div>
+                </Tooltip>
+              </TableCell>
+              <TableCell align="center">
+                <Tooltip title={"Order Value"} arrow>
+                  <div>O. Value</div>
+                </Tooltip>
+              </TableCell>
+              <TableCell align="center">
+                <Tooltip title={"Remark"} arrow>
+                  <div>Remark</div>
+                </Tooltip>
+              </TableCell>
+              <TableCell align="center">
+                <Tooltip title={"Total Value"} arrow>
+                  <div>T. Value</div>
+                </Tooltip>
+              </TableCell>
             </TableRow>
           </TableHead>
           <TableBody>
@@ -405,45 +230,92 @@ export default function OrdersTable() {
               .map((item) => (
                 <TableRow
                   key={`${item.order}-${item.subOrder}`}
-                  sx={{ "&:last-child td, &:last-child th": { border: 0 } }}
+                  sx={{
+                    "&:last-child td, &:last-child th": { border: 0 },
+                  }}
                 >
                   <TableCell component="th" scope="row">
                     {item.order}
                   </TableCell>
-                  <TableCell align="right">{item.subOrder}</TableCell>
-                  <TableCell align="right">{item.itemId}</TableCell>
-                  <TableCell align="right">{item.warehouseId}</TableCell>
-                  <TableCell align="right">{item.supplierId}</TableCell>
-                  <TableCell align="right">{item.request}</TableCell>
-                  <TableCell align="right">{item.type}</TableCell>
-                  <TableCell align="right">{item.price}</TableCell>
-                  <TableCell align="right">{item.createDate}</TableCell>
-                  <TableCell align="right">{item.customerId}</TableCell>
-                  <TableCell align="right">
-                    {item.customerCreditBefore?.toLocaleString("en-US")}
+                  <TableCell align="center">{item.subOrder}</TableCell>
+                  <TableCell align="center">{item.itemId}</TableCell>
+                  <TableCell align="center">{item.warehouseId}</TableCell>
+                  <TableCell align="center">{item.supplierId}</TableCell>
+                  <TableCell align="center">
+                    {item.request.toLocaleString()}
                   </TableCell>
-                  <TableCell align="right">
-                    <TextField
-                      value={item.assigned}
-                      onChange={(e) =>
-                        manualAssignedChange(item, e.target.value)
-                      }
-                      hiddenLabel
-                      type="number"
-                      id="outlined-hidden-label-small"
-                      variant="outlined"
+                  <TableCell align="center">
+                    <Chip
+                      label={item.type.toLowerCase()}
+                      color={orderTier[item.type.toLowerCase()].color}
                       size="small"
                     />
                   </TableCell>
-                  <TableCell align="right">
-                    {item.totalPrice?.toLocaleString("en-US")}
+                  <TableCell align="center">
+                    {item.price?.toLocaleString(undefined, {
+                      minimumFractionDigits: 2,
+                      maximumFractionDigits: 2,
+                    })}
                   </TableCell>
-                  <TableCell align="right">
-                    {item.customerCreditAfter?.toLocaleString("en-US")}
+                  <TableCell align="center">{item.createDate}</TableCell>
+                  <TableCell align="center">{item.customerId}</TableCell>
+                  <TableCell align="center">
+                    {item.initialCredit?.toLocaleString(undefined, {
+                      minimumFractionDigits: 2,
+                      maximumFractionDigits: 2,
+                    })}
                   </TableCell>
-                  <TableCell align="right">{item.remark}</TableCell>
-                  <TableCell align="right">
-                    {customerTotalPrice.get(item.customerId)?.toLocaleString()}
+                  <TableCell align="center">
+                    <Tooltip
+                      slotProps={{
+                        tooltip: {
+                          sx: {
+                            bgcolor: "error.main", // สีพื้นหลัง (แดง)
+                            color: "white", // สีตัวอักษร
+                            "& .MuiTooltip-arrow": {
+                              color: "error.main", // สีลูกศรต้องเป็นสีเดียวกับพื้นหลัง
+                            },
+                            boxShadow: 3, // ใส่เงาให้ดูมีมิติ
+                            fontSize: "12px",
+                          },
+                        },
+                      }}
+                      title={
+                        Number(item.assigned) < Number(item.request)
+                          ? "ยอดจัดสรรน้อยกว่าที่สั่งเนื่องจากของไม่พอหรือเงินไม่พอ"
+                          : ""
+                      }
+                      arrow
+                      placement="top"
+                    >
+                      <TextField
+                        value={item.assigned}
+                        onChange={(e) =>
+                          manualAssignedChange(item, e.target.value)
+                        }
+                        hiddenLabel
+                        type="number"
+                        id="outlined-hidden-label-small"
+                        variant="outlined"
+                        size="small"
+                        error={Number(item.assigned) < Number(item.request)}
+                      />
+                    </Tooltip>
+                  </TableCell>
+                  <TableCell align="center">
+                    {item.totalPrice?.toLocaleString(undefined, {
+                      minimumFractionDigits: 2,
+                      maximumFractionDigits: 2,
+                    })}
+                  </TableCell>
+                  <TableCell align="center">{item.remark || "-"}</TableCell>
+                  <TableCell align="center">
+                    {customerTotalSpend
+                      .get(item.customerId)
+                      ?.toLocaleString(undefined, {
+                        minimumFractionDigits: 2,
+                        maximumFractionDigits: 2,
+                      })}
                   </TableCell>
                 </TableRow>
               ))}
