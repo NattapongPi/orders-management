@@ -1,6 +1,7 @@
+import type { ChipProps } from "@mui/material/Chip";
 interface IOrderTier {
   multiplier: number;
-  color: string;
+  color: ChipProps["color"];
 }
 
 export const orderTier: Record<string, IOrderTier> = {

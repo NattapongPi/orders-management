@@ -26,9 +26,9 @@ import type { InventoryItem } from "../mock/warehouseInventory";
 import { calculateAutoAssign, bankersRound } from "../utils/calculate";
 
 // ต้อง sort ก่อน
-const orders = sortOrder();
+const mockOrders = sortOrder();
 
-export default function OrdersTable2() {
+export default function OrdersTable() {
   const [page, setPage] = useState(0);
   const [rowsPerPage, setRowsPerPage] = useState(10);
   const [tableData, setTableData] = useState<OrderType[]>([]);
@@ -36,7 +36,10 @@ export default function OrdersTable2() {
   const [customerTotalSpend, setCustomerTotalSpend] = useState(
     new Map<string, number>(),
   );
-  const hasRun = useRef(false);
+  const [orders, setOrders] = useState<OrderType[]>(mockOrders);
+  const [itemInput, setItemInput] = useState(
+    mockOrders.map((item) => item.request),
+  );
 
   const handleChangePage = (_event: unknown, newPage: number) => {
     setPage(newPage);
@@ -47,68 +50,65 @@ export default function OrdersTable2() {
     setPage(0);
   };
 
-  async function refreshOrderData(baseOrders: OrderType[]) {
-    const initialInventory = structuredClone(mockInventory);
-    const tempTotalSpendMap = new Map<string, number>();
-
-    const finalOrders = baseOrders.map((order) => {
-      const initialCredit =
-        mockCustomers.find((c) => c.customerId === order.customerId)?.credit ||
-        0;
-
-      const spentSoFar = tempTotalSpendMap.get(order.customerId) || 0;
-      const remainingCredit = initialCredit - spentSoFar;
-
-      const invItem = initialInventory.find(
-        (v) =>
-          v.itemId === order.itemId &&
-          v.warehouseId === order.warehouseId &&
-          v.supplierId === order.supplierId,
-      );
-      const currentStock = invItem?.amount || 0;
-
-      const multiplier = orderTier[order.type.toLowerCase()].multiplier;
-      const supplierItem = mockSupplierItems.find(
-        (s) => s.supplierId === order.supplierId && s.itemId === order.itemId,
-      );
-      if (!supplierItem) return order;
-      const calPrice = bankersRound(supplierItem.price * multiplier, 2);
-      const targetAmount =
-        order.assigned !== undefined && order.assigned !== null
-          ? Number(order.assigned)
-          : order.request;
-      const assigned = calculateAutoAssign(
-        targetAmount,
-        calPrice,
-        currentStock,
-        remainingCredit,
-      );
-
-      const rowTotalPrice = bankersRound(assigned * calPrice, 2);
-
-      tempTotalSpendMap.set(order.customerId, spentSoFar + rowTotalPrice);
-      if (invItem) {
-        invItem.amount -= assigned; // หักสต็อกออกจากถังกลาง
-      }
-
-      return {
-        ...order,
-        price: calPrice,
-        initialCredit,
-        assigned,
-        totalPrice: rowTotalPrice,
-      };
-    });
-    setTableData(finalOrders);
-    setInventory(initialInventory); // Admin จะเห็นสต็อกที่เหลือจริงๆ หลังหักทุก Order
-    setCustomerTotalSpend(tempTotalSpendMap); // เอาไว้โชว์ยอดสรุปรายคน
-  }
-
   useEffect(() => {
-    if (hasRun.current) return;
-    hasRun.current = true;
+    async function refreshOrderData(baseOrders: OrderType[]) {
+      const initialInventory = structuredClone(mockInventory);
+      const tempTotalSpendMap = new Map<string, number>();
+      const finalOrders = baseOrders.map((order) => {
+        const initialCredit =
+          mockCustomers.find((c) => c.customerId === order.customerId)
+            ?.credit || 0;
+
+        const spentSoFar = tempTotalSpendMap.get(order.customerId) || 0;
+        const remainingCredit = initialCredit - spentSoFar;
+
+        const invItem = initialInventory.find(
+          (v) =>
+            v.itemId === order.itemId &&
+            v.warehouseId === order.warehouseId &&
+            v.supplierId === order.supplierId,
+        );
+        const currentStock = invItem?.amount || 0;
+
+        const multiplier = orderTier[order.type.toLowerCase()].multiplier;
+        const supplierItem = mockSupplierItems.find(
+          (s) => s.supplierId === order.supplierId && s.itemId === order.itemId,
+        );
+        if (!supplierItem) return order;
+        const calPrice = bankersRound(supplierItem.price * multiplier, 2);
+        const targetAmount =
+          order.assigned !== undefined && order.assigned !== null
+            ? Number(order.assigned)
+            : order.request;
+        const assigned = calculateAutoAssign(
+          targetAmount,
+          calPrice,
+          currentStock,
+          remainingCredit,
+        );
+
+        const rowTotalPrice = bankersRound(assigned * calPrice, 2);
+
+        tempTotalSpendMap.set(order.customerId, spentSoFar + rowTotalPrice);
+        if (invItem) {
+          invItem.amount -= assigned; // หักสต็อกออกจากถังกลาง
+        }
+
+        return {
+          ...order,
+          price: calPrice,
+          initialCredit,
+          assigned,
+          totalPrice: rowTotalPrice,
+        };
+      });
+      setTableData(finalOrders);
+      setInventory(initialInventory); // Admin จะเห็นสต็อกที่เหลือจริงๆ หลังหักทุก Order
+      setItemInput(finalOrders.map((item) => Number(item.assigned)));
+      setCustomerTotalSpend(tempTotalSpendMap); // เอาไว้โชว์ยอดสรุปรายคน
+    }
     refreshOrderData(orders);
-  }, []);
+  }, [orders]);
 
   function manualAssignedChange(order: OrderType, newValue: string) {
     const numNewValue = Number(newValue) || 0;
@@ -130,6 +130,7 @@ export default function OrdersTable2() {
       if (t.order === order.order && t.subOrder === order.subOrder) {
         // ห้ามกรอกเกิน Request
         if (numNewValue > t.request) return t;
+
         return {
           ...t,
           assigned: newValue,
@@ -137,9 +138,38 @@ export default function OrdersTable2() {
       }
       return t;
     });
-
-    refreshOrderData(updatedData);
+    setOrders(updatedData);
   }
+
+  const timeoutRef = useRef<number | null>(null);
+
+  const onChange = (item: OrderType, value: string, index: number) => {
+    let tempValue = value;
+    if (Number(value) > item.request) {
+      // ดัก overflow
+      tempValue = String(item.request);
+      setItemInput(
+        itemInput.map((_item, idx) => (index === idx ? item.request : _item)),
+      );
+    } else if (Number(value) < 0) {
+      // ดัก underflow
+      tempValue = String(0);
+      setItemInput(itemInput.map((_item, idx) => (index === idx ? 0 : _item)));
+    } else {
+      // เปลี่ยนค่าตามที่แก้
+      tempValue = value;
+      setItemInput(
+        itemInput.map((_item, idx) => (index === idx ? Number(value) : _item)),
+      );
+    }
+
+    if (timeoutRef.current) {
+      clearTimeout(timeoutRef.current);
+    }
+    timeoutRef.current = window.setTimeout(() => {
+      manualAssignedChange(item, tempValue);
+    }, 500);
+  };
 
   return (
     <>
@@ -227,7 +257,7 @@ export default function OrdersTable2() {
           <TableBody>
             {tableData
               .slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage)
-              .map((item) => (
+              .map((item, index) => (
                 <TableRow
                   key={`${item.order}-${item.subOrder}`}
                   sx={{
@@ -289,9 +319,13 @@ export default function OrdersTable2() {
                       placement="top"
                     >
                       <TextField
-                        value={item.assigned}
+                        value={itemInput[page * rowsPerPage + index]}
                         onChange={(e) =>
-                          manualAssignedChange(item, e.target.value)
+                          onChange(
+                            item,
+                            e.target.value,
+                            page * rowsPerPage + index,
+                          )
                         }
                         hiddenLabel
                         type="number"
