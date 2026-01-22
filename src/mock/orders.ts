@@ -1,6 +1,8 @@
 export type OrderPriority = "EMERGENCY" | "CLAIM" | "OVERDUE" | "DAILY";
 
-const typePriority: Record<string, number> = {
+export type OrderStatus = "pending" | "confirmed" | "error";
+
+export const typePriority: Record<string, number> = {
   EMERGENCY: 1,
   CLAIM: 2,
   OVERDUE: 3,
@@ -24,6 +26,7 @@ export type OrderType = {
   assigned?: number | string;
   totalPrice?: number;
   initialCredit?: number | string;
+  status?: OrderStatus;
 };
 
 // ขาด customer credit
