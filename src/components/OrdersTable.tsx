@@ -71,7 +71,7 @@ export default function OrdersTable2() {
       const supplierItem = mockSupplierItems.find(
         (s) => s.supplierId === order.supplierId && s.itemId === order.itemId,
       );
-      if (!supplierItem) return;
+      if (!supplierItem) return order;
       const calPrice = bankersRound(supplierItem.price * multiplier, 2);
       const targetAmount =
         order.assigned !== undefined && order.assigned !== null
