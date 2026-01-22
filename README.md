@@ -12,72 +12,28 @@ React Vite, Material UI, tailwind + Typescript
 
 2.  สร้าง directory ที่ต้องการวางโปรเจค เช่น "C:\Users\user\Documents\work" จากนั้นให้ cd เข้าไปในที่ที่ต้องการสร้างโปรเจค
 
-3.  สร้าง Vite Project
-    - npm create vite@latest
-    - จากนั้นใส่ชื่อ project ที่ต้องการ เช่น assignment-balerion
-    - เลือก react
-    - เลือก typescript
-    - ลอง npm run dev หากใช้ได้ถือว่าสำเร็จ
-
-4.  ติดตั้ง material ui
-    - [Installation - Material UI](https://mui.com/material-ui/getting-started/installation/)
-    - npm install @mui/material @emotion/react @emotion/styled
-    - ลองเรียกใช้งาน Component หากใช้ได้ถือว่าสำเร็จ
+3.  clone project ต่อไปนี้
+    - https://github.com/NattapongPi/orders-management.git
 
 ```js
-import Button from "@mui/material/Button";
-function App() {
-  return (
-    <>
-      <Button variant="contained">confirm</Button>
-    </>
-  );
-}
-
-export default App;
+git clone https://github.com/NattapongPi/orders-management.git
 ```
 
-5.  ติดตั้ง tailwind css
-    - [Tailwind CSS Installing with Vite - Installation](https://tailwindcss.com/docs/installation/using-vite)
-    - npm install tailwindcss @tailwindcss/vite
-    - ลองเรียกใช้งาน className หากใช้ได้ถือว่าสำเร็จ
+4. cd orders-management เพื่อเข้าไปใน project directory
+
+5. ใช้คำสั่ง npm install เพื่อติดตั้ง dependencies ที่จำเป็น
 
 ```js
-<div className="text-4xl font-bold pb-6">Order Management</div>
+npm install
 ```
 
-6.  ติดตั้ง react-router-dom
-    - npm install react-router-dom
-    - https://reactrouter.com/
-    - ตัวอย่าง Code ในไฟล์ App.js หากใช้ได้ถือว่าสำเร็จ
+6. ใช้คำสั่ง npm run dev เพื่อ start application
 
 ```js
-import { BrowserRouter, Routes, Route, Link } from "react-router-dom";
-
-function App() {
-  return (
-    <BrowserRouter>
-      <nav>
-        <Link to="/">หน้าแรก</Link> | <Link to="/about">เกี่ยวกับเรา</Link>
-      </nav>
-
-      <Routes>
-        <Route path="/" element={<Home />} />
-        <Route path="/about" element={<About />} />
-      </Routes>
-    </BrowserRouter>
-  );
-}
-
-function Home() {
-  return <h1>นี่คือหน้า Home</h1>;
-}
-function About() {
-  return <h1>นี่คือหน้า About</h1>;
-}
-
-export default App;
+npm run dev
 ```
+
+7. เปิดโปรแกรมจาก localhost
 
 ## วิธีการใช้งานโปรแกรม
 
