@@ -2,6 +2,11 @@
 
 React Vite, Material UI, tailwind + Typescript
 
+ผมลองสร้างอีก 1 โปรเจคโดยใช้ ai vibe coding + gemini เพื่อทดลองการใช้งาน antigravity
+สามารถเข้าเยี่ยมชมได้ที่นี่
+[github](https://github.com/NattapongPi/orders-management-ai)
+[website](https://orders-management-ai.vercel.app/)
+
 ## Installation
 
 1.  ติดตั้ง node.js
